@@ -3,10 +3,11 @@ library(dplyr)
 library(MCMCpack)
 library(tictoc)
 library(Matrix)
-#library(snpStats)
+# Inverse Logit Function
 'InvLogit'  = function(x){
     exp(x)/(1 + exp(x))
 }
+# Function to add Gaussian noise
 'LogitNoise' = function(x, sigma2){
     x   = ifelse(x > 0.99, 0.99, ifelse(x < 0.01, 0.01, x))
     y   = log(x/(1 - x))
@@ -15,6 +16,7 @@ library(Matrix)
                  ifelse(tmp < -4.0, -4.0 + abs(tmp + 4.0), tmp))
     return(InvLogit(z))
 }
+# Function to build MME
 'BuildMME'  = function(npool, nsires, sigma2e, sigma2a, G, y, nvec){
     #sigma2e       = 1 - h2
     #sigma2a       = h2
@@ -30,130 +32,8 @@ library(Matrix)
     LHS[idx, idx] = LHS[idx, idx] + Ginv
     return(list(LHS = LHS, rhs = rhs))
 }
-'BuildMME_i' = function(nind, nsires, sigma2e, sigma2a, y, G){
-    X           = as.matrix(rep(1, nind))
-    Z           = cbind(matrix(0, nrow = nind, ncol = nsires), Diagonal(nind))
-    Rinv        = Diagonal(nind)/sigma2e
-    W           = rbind(cbind(crossprod(X, crossprod(Rinv, X)), crossprod(X, crossprod(Rinv, Z))),
-                        cbind(crossprod(Z, crossprod(Rinv, X)), crossprod(Z, crossprod(Rinv, Z))))
-    #W           = cbind(X, Z)
-    #C           = as(crossprod(W), 'dgCMatrix')
-    C           = as(W, 'dgCMatrix')
-    idx         = 2:(nsires + nind + 1)
-    C[idx, idx] = C[idx, idx] + MASS::ginv(G)*(1/sigma2a)
-    rhs         = rbind(crossprod(X, crossprod(Rinv, y)), crossprod(Z, crossprod(Rinv, y)))
-    return(list(LHS = C, rhs = rhs))
-}
-'PEVpool'   = function(npool, nsires, sigma2e, sigma2a, G, n_k){
-    ZRZ         = as(matrix(0, ncol = npool + nsires, nrow = npool + nsires), 'dgCMatrix')
-    diag(ZRZ)   = c(rep(0, nsires), n_k)
-    Ginv        = MASS::ginv(G)
-    C           = solve(ZRZ + sigma2e/sigma2a*Ginv)
-    return(C)
-}
-'CorRel'    = function(npool, nsires, G, sigma2e, sigma2a, n_k){
-    Z   = as(cbind(matrix(0, ncol = nsires, nrow = npool), diag(npool)), 'dgCMatrix')
-    Va  = (G*sigma2a)%*%t(Z)%*%solve(Z%*%(G*sigma2a)%*%t(Z) + diag(n_k)*sigma2e, Z%*%(G*sigma2a))
-    return(Va)
-}
-'buildPed'  = function (ID, Par1, Par2, gener = NULL, sex = NULL, add.ancestors = FALSE, unknown = 0) {
-    ID <- as.character(ID)
-    Par1 <- as.character(Par1)
-    Par2 <- as.character(Par2)
-    n <- length(ID)
-    if (length(unique(ID)) != n) 
-        warning("ID is not unique, removing duplicated individuals")
-    if (length(Par1) != n) 
-        stop("Par1 must have same length as ID")
-    if (length(Par2) != n) 
-        stop("Par2 must have same length as ID")
-    if (!(0 %in% ID | "0" %in% ID | any(unknown %in% ID))) {
-        Par1[Par1 == "0" | Par1 %in% unknown | Par1 == 
-                 0] <- NA
-        Par2[Par2 == "0" | Par2 %in% unknown | Par2 == 
-                 0] <- NA
-    }
-    else if (as.character(ID[ID == 0 | ID == "0"]) == as.character(Par1[ID == 
-                                                                        0 | ID == "0"]) & as.character(ID[ID == 0 | ID == 
-                                                                                                          "0"]) == as.character(Par2[ID == 0 | ID == "0"])) {
-        Par1 <- Par1[ID != 0 | ID != "0"]
-        Par2 <- Par2[ID != 0 | ID != "0"]
-        ID <- ID[ID != 0 | ID != "0"]
-        Par1[Par1 == "0" | Par1 %in% unknown | Par1 == 
-                 0] <- NA
-        Par2[Par2 == "0" | Par2 %in% unknown | Par2 == 
-                 0] <- NA
-    }
-    Pars <- unique(c(Par1[!is.na(Par1)], Par2[!is.na(Par2)]))
-    ancestors <- Pars[!Pars %in% ID]
-    ID <- c(ancestors, ID)
-    Par1 <- c(rep(NA, length(ancestors)), Par1)
-    Par2 <- c(rep(NA, length(ancestors)), Par2)
-    if (!is.null(gener)) 
-        gener <- c(rep(NA, length(ancestors)), gener)
-    if (!is.null(sex)) 
-        sex <- c(rep(NA, length(ancestors)), sex)
-    n <- length(ID)
-    if (is.null(gener)) {
-        generOld <- gener <- rep(n + 100, n)
-        gener[is.na(Par1) & is.na(Par2)] <- 0
-        i <- 0
-        while (!all(generOld == gener)) {
-            generOld <- gener
-            gener[Par1 %in% ID[gener == i]] <- i + 1
-            gener[Par2 %in% ID[gener == i]] <- i + 1
-            i <- i + 1
-            if (i > n + 10) 
-                break
-        }
-    }
-    if (add.ancestors) 
-        ancestors <- FALSE
-    if (!is.null(sex)) 
-        pedigree <- data.frame(ID = ID[!ID %in% ancestors], Par1 = Par1[!ID %in% 
-                                                                            ancestors], Par2 = Par2[!ID %in% ancestors], gener = gener[!ID %in% 
-                                                                                                                                           ancestors], sex = sex[!ID %in% ancestors], stringsAsFactors = FALSE)
-    else pedigree <- data.frame(ID = ID[!ID %in% ancestors], 
-                                Par1 = Par1[!ID %in% ancestors], Par2 = Par2[!ID %in% 
-                                                                                 ancestors], gener = gener[!ID %in% ancestors], stringsAsFactors = FALSE)
-    pedigree <- pedigree[!duplicated(pedigree), ]
-    pedigree <- pedigree[order(pedigree$gener, partial = pedigree$ID), 
-    ]
-    class(pedigree) <- c("pedigree", "data.frame")
-    pedigree[is.na(pedigree)] <- 0
-    return(pedigree)
-}
-'renumped'  = function(Pedigree){
-    ID              = match(Pedigree[, 1], Pedigree[, 1])
-    SID             = match(Pedigree[, 2], Pedigree[, 1])
-    SID[is.na(SID)] = 0
-    DID             = match(Pedigree[, 3], Pedigree[, 1])
-    DID[is.na(DID)] = 0
-    ped             = data.frame(ID = ID, SID = SID, DID = DID, Old = Pedigree[, 1], stringsAsFactors = F)
-    return(ped)
-}
-'PBLUP' = function(X, Z, Ainv, Y, alpha){
-    xtx     = crossprod(X)
-    xtz     = crossprod(X, Z)
-    ztx     = crossprod(Z, X)
-    ztzainv = crossprod(Z) + alpha * Ainv
-    nr      = nrow(xtx) + nrow(ztx)
-    LHS     = Matrix(0, ncol = nr, nrow = nr)
-    LHS     = Matrix(0, ncol = nr, nrow = nr)
-    LHS[1:nrow(xtx), 1:ncol(xtx)]                   = xtx
-    LHS[nrow(xtx) + seq(1:nrow(ztx)), 1:ncol(ztx)]  = ztx
-    LHS[1:nrow(xtz), ncol(xtx) + seq(1, ncol(xtz))] = xtz
-    LHS[nrow(xtz) + seq(1:nrow(ztzainv)), ncol(ztx) + seq(1, ncol(ztzainv))] = ztzainv
-    RHS                 = Matrix(0, ncol = 1, nrow = nr)
-    xty                 = crossprod(X, Y)
-    RHS[1:nrow(xty), 1] = xty
-    zty                 = crossprod(Z, Y)
-    RHS[nrow(xty) + seq(1, nrow(zty))] = zty
-    sol                 = solve(LHS, RHS)
-    return(list(sol = sol, C = LHS))
-}
-
-Rcpp::sourceCpp('/work/rmlewis/napov/PoolingSimulation/G3/RandMating/XXtEig.cpp')
+# Change this to a folder where the file XXtEig.cpp is saved
+Rcpp::sourceCpp('~/XXtEig.cpp')
 ngen                          = 15
 nchr                          = 26
 sigmavec                      = c(0.125, 0.625, 1.125)
@@ -172,20 +52,18 @@ chrlen                        = c(275406953, 248966461, 223996068, 119216639,
 nmarkers                      = round(chrlen*2.2/1e5)
 nqtl                          = round(chrlen*0.1/1e5)
 nsnp                          = sum(nmarkers)
+# Change the folder where results are stored #
 cat('Accuracy', 'Bias', 'Replication', 'Poolsize_Pools', 'Error', 'Design', 'Scaling', 'Sires_Pool', 'Prog_sire',
     'Sire_rep', 'MeanRel', 'SDRel', 'ConstError' , sep = " ", 
-    file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+    file = '~/SelSim1.txt', append = T)
+cat('\n', file = '~/SelSim1.txt', append = T)
 cat('Mean', 'SD', 'Min', 'Max', 'PoolSize1', 'Npooled', 'Replication', 'Pools', 'Error' , sep = " ", 
-    file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelClus1.txt', append = T)
-cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelClus1.txt', append = T)
-#cat('Scenario', 'Replication', 'Mean', 'SD', 'Max', 'Min',
-#    file = '/work/rmlewis/napov/PoolingSimulation/Selection/LDsummary2.txt', append = T)
-#cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/Selection/LDsummary2.txt', append = T)
+    file = '~/SelClus1.txt', append = T)
+cat('\n', file = '~/SelClus1.txt', append = T)
 cat('PoolSize', 'Error', 'Design', 'Scaling', 'ConstError', 'Replication', 'PopTBV', 
     'T10', 'T20', 'T40', 'B40', 'B20', 'B10', sep = ' ', 
-    file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+    file = '~/TopBotSel.txt', append = T)
+cat('\n', file = '~/TopBotSel.txt', append = T)
 t1 = proc.time()
 for(irep in 1:nrep){
     set.seed(202006 + irep)
@@ -265,17 +143,6 @@ for(irep in 1:nrep){
     DF          = DF %>% dplyr::mutate(ID = as.numeric(ID)) %>% dplyr::mutate(Sire = as.numeric(Sire)) %>%
         dplyr::mutate(Dam = as.numeric(Dam))
     nsires      = 30
-    #LDmat       = matrix(0, nchr, 1)
-    #c2          = cumsum(nmarkers)
-    #last        = 0
-    #for(c1 in 1:nchr){
-    #    first       = last + 1
-    #    last        = c2[c1]
-    #    X           = Genotypes[, first:last]
-    #    Y           = as(X, 'SnpMatrix')
-    #    A           = ld(x = Y, stats = 'R.squared', depth = 1)
-    #    LDmat[c1]   = mean(A@x, na.rm = T)
-    #}
     #--------------#
     # Sample sires #
     #--------------#
@@ -338,8 +205,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV) 
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Extremes', 'Cov',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Unequal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -350,8 +217,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Extremes', 'Cov', 'Unequal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
             tic()
             MME                 = BuildMME(npool = K, nsires = nsires, sigma2e = 0.7, sigma2a = 0.3,
                                            G = cov2cor(G), y_k, rep(n_k[k], K))
@@ -365,8 +232,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Extremes', 'Cor',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Unequal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -377,8 +244,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Extremes', 'Cor', 'Unequal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
         }
     }
     #-----------------------#
@@ -430,8 +297,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV) 
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Extremes', 'Cov',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Equal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -442,8 +309,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Extremes', 'Cov', 'Equal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
             tic()
             MME                 = BuildMME(npool = K, nsires = nsires, sigma2e = 0.7, sigma2a = 0.3, 
                                            G = cov2cor(G), y_k, rep(n_k[k], K))
@@ -457,8 +324,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV) 
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Extremes', 'Cor',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Equal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -469,8 +336,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Extremes', 'Cor', 'Equal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
         }
     }
     #----------------#
@@ -527,8 +394,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Random', 'Cov',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Unequal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -539,8 +406,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Random', 'Cov', 'Unequal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
             tic()
             MME                 = BuildMME(npool = K, nsires = nsires, sigma2e = 0.7, sigma2a = 0.3, 
                                            G = cov2cor(G), y_k, rep(n_k[k], K))
@@ -554,8 +421,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Random', 'Cor',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Unequal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -566,8 +433,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Random', 'Cor', 'Unequal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
         }
     }
     #-----------------------#
@@ -621,8 +488,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Random', 'Cov',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Equal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -633,8 +500,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Random', 'Cov', 'Equal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
             tic()
             MME                 = BuildMME(npool = K, nsires = nsires, sigma2e = 0.7, sigma2a = 0.3, 
                                            G = cov2cor(G), y_k, rep(n_k[k], K))
@@ -648,8 +515,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Random', 'Cor',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Equal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -660,8 +527,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Random', 'Cor', 'Equal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
         }
     }
     #-----------------------------------------#
@@ -726,8 +593,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Kmeans', 'Cov',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Unequal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -738,8 +605,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Kmeans', 'Cov', 'Unequal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
             tic()
             MME                 = BuildMME(npool = K, nsires = nsires, sigma2e = 0.7, sigma2a = 0.3, 
                                            G = cov2cor(G), y_k, nvec)
@@ -753,12 +620,12 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Kmeans', 'Cor',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Unequal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             cat(mean(m2$Size), sd(m2$Size), range(m2$Size), sum(m2$Size == 1), sum(m2$Size),
                 irep, K, sigmavec[ss], sep = " ", 
-                file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelClus1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelClus1.txt', append = T)
+                file = '~/SelClus1.txt', append = T)
+            cat('\n', file = '~/SelClus1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -769,8 +636,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Kmeans', 'Cor', 'Unequal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
         }
     }
     #-----------------------#
@@ -833,8 +700,8 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Kmeans', 'Cov',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Equal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/SelSim1.txt', append = T)
+            cat('\n', file = '~/SelSim1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -845,8 +712,8 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Kmeans', 'Cov', 'Equal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
             tic()
             MME                 = BuildMME(npool = K, nsires = nsires, sigma2e = 0.7, sigma2a = 0.3,
                                            G = cov2cor(G), y_k, nvec)
@@ -860,12 +727,12 @@ for(irep in 1:nrep){
 	    b1 			= mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
             cat(c1, b1, irep, poolsize[ps], sigmavec[ss], 'Kmeans', 'Cor',
                 mean(siresperpool), mean(progpersire), mean(rowSums(SireRep)), mean(rel), sd(rel), 'Equal',
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+                sep = " ", file = '~/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
+            cat('\n', file = '~/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
             cat(mean(m2$Size), sd(m2$Size), range(m2$Size), sum(m2$Size == 1), sum(m2$Size),
                 irep, K, sigmavec[ss], sep = " ", 
-                file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelClus1.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelClus1.txt', append = T)
+                file = '~/SelClus1.txt', append = T)
+            cat('\n', file = '~/SelClus1.txt', append = T)
             topvals             = rep(0, 3)
             topidx              = list(19:30, 25:30, 28:30)
             botvals             = rep(0, 3)
@@ -876,96 +743,10 @@ for(irep in 1:nrep){
             }
             cat(poolsize[ps], sigmavec[ss], 'Kmeans', 'Cor', 'Equal', irep, mean(DF$TBV), 
                 c(rev(topvals), botvals),
-                sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-            cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
+                sep = " ", file = '~/TopBotSel.txt', append = T)
+            cat('\n', file = '~/TopBotSel.txt', append = T)
         }
     }
-    #-------------------------------------------#
-    # GBLUP with all (subset) progeny genotyped #
-    #-------------------------------------------#
-    idx     = which(rownames(SireGeno)%in%rsires)
-    DFF     = DF[subid, ]
-    idi     = which(rownames(Genotypes)%in%DFF$ID)
-    phat    = colMeans(Genotypes)/2
-    indx    = which(phat < 0.01 | phat > 0.99)
-    nrem    = nsnp - length(indx)
-    M       = rbind(SireGeno[idx, -indx], Genotypes[idi, -indx])
-    muvec   = colMeans(M)/2
-    G       = GetGInt(M, muvec, dim(M)[1], dim(M)[2])
-    MME     = BuildMME_i(length(subid), nsires, 0.7, 0.3, arrange(DFF, ID)$Pheno, G)
-    ans     = solve(MME$LHS, MME$rhs)
-    C22     = diag(ginv(as.matrix(MME$LHS)))[2:(nsires + 1)]
-    rel     = sqrt(pmax(1 - C22*(0.7/0.3), 0))
-    c1      = cor(SireTBV$TBV[which(SireTBV$ID %in% rsires)], ans[2:(nsires + 1)])
-    d1      = data.frame(TBV = SireTBV$TBV[which(SireTBV$ID %in% rsires)], 
-                                     EBV = ans[2:(nsires + 1)])
-    b1      = mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
-    cat(c1, b1, irep, '--', '--', 'GBLUP', '--',
-        '--', '--', '--', mean(rel), sd(rel), '--',
-        sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-    cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-    topvals             = rep(0, 3)
-    topidx              = list(19:30, 25:30, 28:30)
-    botvals             = rep(0, 3)
-    botidx              = list(1:12, 1:6, 1:3) 
-    for(i in 1:3){
-        topvals[i] = d1 %>% arrange(EBV) %>% slice(topidx[[i]]) %>% summarise(x = mean(TBV)) %>% unlist()
-        botvals[i] = d1 %>% arrange(EBV) %>% slice(botidx[[i]]) %>% summarise(x = mean(TBV)) %>% unlist()
-    }
-    cat('--', '--', 'GBLUP', '--', '--', irep, mean(DF$TBV), 
-        c(rev(topvals), botvals),
-        sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-    cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-    rm(G)
-    rm(MME)
-    rm(SireGeno)
-    rm(Genotypes)
-    #---------------------------#
-    # PBLLUP with full pedigree #
-    #---------------------------#
-    ped1    = buildPed(DF$ID, DF$Sire, DF$Dam, add.ancestors = T)[, 1:3]
-    ped2    = renumped(ped1)
-    Ainv    = nadiv::makeAinv(ped1)
-    xx1     = as(Ainv$Ainv, 'dgTMatrix')
-    xmat    = rep(1, nrow(DF))
-    zmat    = cbind(Matrix(0, ncol = nrow(ped2) - nrow(DF), nrow = nrow(DF)), Diagonal(nrow(DF)))
-    tmp     = PBLUP(X = xmat, Z = zmat, Ainv = xx1, Y = DF$Pheno, alpha = 0.7/0.3)
-    ans     = tmp$sol[-1,]
-    C22     = diag(Matrix::solve(tmp$C, Diagonal(ncol(tmp$C))))[-1]
-    c22     = C22[which(ped2$Old%in%rsires)]
-    rel     = sqrt(pmax(1 - c22*(0.7/0.3), 0))
-    d1      = data.frame(ID = ped2$Old[ped2$Old%in%rsires], EBV = ans[which(ped2$Old%in%rsires)])
-    d2      = rbind(SireTBV, ProgTBV)
-    df      = merge(d1, d2, by = 'ID')
-    c1      = cor(df$TBV, df$EBV)
-    b1 	    = mean((df$TBV - mean(DF$TBV) - df$EBV)/df$TBV)#mean((d1$TBV - mean(DF$TBV) - d1$EBV)/d1$TBV)
-    cat(c1, b1, irep, '--', '--', 'PBLUP', '--',
-        '--', '--', '--', mean(rel), sd(rel), '--',
-        sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-    cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/SelSim1.txt', append = T)
-    #cat('Selection', irep, mean(LDmat), sd(LDmat), max(LDmat), min(LDmat), sep = ' ', 
-    #    file = '/work/rmlewis/napov/PoolingSimulation/Selection/LDsummary2.txt', append = T)
-    #cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/Selection/LDsummary2.txt', append = T)
-    d1                  = data.frame(TBV = SireTBV$TBV[which(SireTBV$ID %in% rsires)], 
-                                     EBV = ans[2:(nsires + 1)])
-    topvals             = rep(0, 3)
-    topidx              = list(19:30, 25:30, 28:30)
-    botvals             = rep(0, 3)
-    botidx              = list(1:12, 1:6, 1:3) 
-    for(i in 1:3){
-        topvals[i] = d1 %>% arrange(EBV) %>% slice(topidx[[i]]) %>% summarise(x = mean(TBV)) %>% unlist()
-        botvals[i] = d1 %>% arrange(EBV) %>% slice(botidx[[i]]) %>% summarise(x = mean(TBV)) %>% unlist()
-    }
-    cat('--', '--', 'PBLUP', '--', '--', irep, mean(DF$TBV), 
-        c(rev(topvals), botvals),
-        sep = " ", file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-    cat('\n', file = '/work/rmlewis/napov/PoolingSimulation/G3/RandMating/TopBotSel.txt', append = T)
-    cat('#----------------------------------#\n')
-    cat('# Replication :', irep, ' completed.\n')
-    cat('#----------------------------------#\n')
-    rm(tmp)
-    rm(C22)
-    gc()
 }
 t2 = proc.time()
 tt = t2 - t1; tt
